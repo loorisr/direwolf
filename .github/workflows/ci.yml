@@ -40,7 +40,6 @@ jobs:
         uses: egor-tensin/setup-mingw@v3
         with:
           platform: ${{ matrix.config.mingw_platform }}
-          location: 'C:\mingw'
 
       - name: dependency
         shell: bash
