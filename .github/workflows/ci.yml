@@ -37,7 +37,7 @@ jobs:
       # Use the specific MinGW installer action for Windows
       - name: Install MinGW
         if: runner.os == 'Windows'
-        uses: egorpuryaev/install-mingw@v3
+        uses: egor-tensin/setup-mingw@v3
         with:
           platform: ${{ matrix.config.mingw_platform }}
           location: 'C:\mingw'
