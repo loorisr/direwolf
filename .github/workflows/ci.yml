@@ -24,42 +24,30 @@ jobs:
           - {
               name: 'Windows Latest MinGW 64bit',
               os: windows-latest,
-              cc: 'gcc',
-              cxx: 'g++',
               arch: 'x86_64',
               msys_sys: 'MINGW64',
-              shell: 'msys2 {0}', # Uses MSYS2 environment
               build_type: 'Release',
               cmake_extra_flags: '-G "MinGW Makefiles"'
             }
           - {
               name: 'Windows Latest MinGW 32bit',
               os: windows-latest,
-              cc: 'gcc',
-              cxx: 'g++',
               arch: 'i686',
               msys_sys: 'MINGW32',
-              shell: 'msys2 {0}', # Uses MSYS2 environment
               build_type: 'Release',
               cmake_extra_flags: '-G "MinGW Makefiles"'
             }
           - {
               name: 'macOS latest',
               os: macos-latest,
-              cc: 'clang',
-              cxx: 'clang++',
               arch: 'x86_64',
-              shell: 'bash',
               build_type: 'Release',
               cmake_extra_flags: ''
             }
           - {
               name: 'Ubuntu latest Debug',
               os: ubuntu-latest,
-              cc: 'gcc',
-              cxx: 'g++',
               arch: 'x86_64',
-              shell: 'bash',
               build_type: 'Debug',
               cmake_extra_flags: ''
             }
@@ -70,7 +58,6 @@ jobs:
         with:
           fetch-depth: 8
 
-      # SETUP MSYS2 for Windows jobs (This 'if' is allowed to use runner.os)
       - name: Setup MSYS2
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -81,7 +68,6 @@ jobs:
             mingw-w64-${{ matrix.config.arch }}-gcc
             mingw-w64-${{ matrix.config.arch }}-cmake
             mingw-w64-${{ matrix.config.arch }}-make
-            mingw-w64-${{ matrix.config.arch }}-tools-git
 
       - name: dependency
         shell: bash
@@ -97,35 +83,46 @@ jobs:
         run: cmake -E make_directory ${{github.workspace}}/build
 
       - name: configure
-        shell: ${{ matrix.config.shell }}
+        shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
+          # Explicitly force the correct MinGW path to the front to avoid picking up the runner's default 64-bit GCC
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            if [ "${{ matrix.config.msys_sys }}" == "MINGW32" ]; then
+              export PATH="/c/msys64/mingw32/bin:$PATH"
+            else
+              export PATH="/c/msys64/mingw64/bin:$PATH"
+            fi
+          fi
+
           cmake $GITHUB_WORKSPACE \
             -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
-            -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
-            -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }} \
             -DCMAKE_CXX_FLAGS="-Werror" -DUNITTEST=1 \
             ${{ matrix.config.cmake_extra_flags }} \
             ${{ github.event.inputs.cmake_flags }}
 
       - name: build
-        shell: ${{ matrix.config.shell }}
+        shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
-          cmake --build . --config ${{ matrix.config.build_type }} \
-            ${{ github.event.inputs.cmake_flags }}
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            if [ "${{ matrix.config.msys_sys }}" == "MINGW32" ]; then
+              export PATH="/c/msys64/mingw32/bin:$PATH"
+            else
+              export PATH="/c/msys64/mingw64/bin:$PATH"
+            fi
+          fi
+          cmake --build . --config ${{ matrix.config.build_type }}
 
       - name: test
         continue-on-error: true
-        shell: ${{ matrix.config.shell }}
+        shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
-          ctest -C ${{ matrix.config.build_type }} \
-            --parallel 2 --output-on-failure \
-            ${{ github.event.inputs.cmake_flags }}
+          ctest -C ${{ matrix.config.build_type }} --parallel 2 --output-on-failure
 
       - name: package
-        shell: ${{ matrix.config.shell }}
+        shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
           if [ "$RUNNER_OS" != "Linux" ]; then
