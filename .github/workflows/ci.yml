@@ -28,6 +28,7 @@ jobs:
               cxx: 'g++',
               arch: 'x86_64',
               msys_sys: 'MINGW64',
+              shell: 'msys2 {0}', # Uses MSYS2 environment
               build_type: 'Release',
               cmake_extra_flags: '-G "MinGW Makefiles"'
             }
@@ -38,6 +39,7 @@ jobs:
               cxx: 'g++',
               arch: 'i686',
               msys_sys: 'MINGW32',
+              shell: 'msys2 {0}', # Uses MSYS2 environment
               build_type: 'Release',
               cmake_extra_flags: '-G "MinGW Makefiles"'
             }
@@ -47,6 +49,7 @@ jobs:
               cc: 'clang',
               cxx: 'clang++',
               arch: 'x86_64',
+              shell: 'bash',
               build_type: 'Release',
               cmake_extra_flags: ''
             }
@@ -56,6 +59,7 @@ jobs:
               cc: 'gcc',
               cxx: 'g++',
               arch: 'x86_64',
+              shell: 'bash',
               build_type: 'Debug',
               cmake_extra_flags: ''
             }
@@ -66,7 +70,7 @@ jobs:
         with:
           fetch-depth: 8
 
-      # SETUP MSYS2 for Windows jobs
+      # SETUP MSYS2 for Windows jobs (This 'if' is allowed to use runner.os)
       - name: Setup MSYS2
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -89,12 +93,11 @@ jobs:
             brew install portaudio hamlib gpsd hidapi
           fi
 
-      - name: create build directory
+      - name: create build environment
         run: cmake -E make_directory ${{github.workspace}}/build
 
       - name: configure
-        # Use msys2 shell on Windows to ensure correct PATH and environment
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.shell }}
         working-directory: ${{github.workspace}}/build
         run: |
           cmake $GITHUB_WORKSPACE \
@@ -106,7 +109,7 @@ jobs:
             ${{ github.event.inputs.cmake_flags }}
 
       - name: build
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.shell }}
         working-directory: ${{github.workspace}}/build
         run: |
           cmake --build . --config ${{ matrix.config.build_type }} \
@@ -114,7 +117,7 @@ jobs:
 
       - name: test
         continue-on-error: true
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.shell }}
         working-directory: ${{github.workspace}}/build
         run: |
           ctest -C ${{ matrix.config.build_type }} \
@@ -122,10 +125,10 @@ jobs:
             ${{ github.event.inputs.cmake_flags }}
 
       - name: package
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.shell }}
         working-directory: ${{github.workspace}}/build
         run: |
-          if [ "$RUNNER_OS" == "Windows" ] || [ "$RUNNER_OS" == "macOS" ]; then
+          if [ "$RUNNER_OS" != "Linux" ]; then
             cmake --build . --target package
           fi
 
