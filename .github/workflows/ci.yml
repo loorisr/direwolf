@@ -64,22 +64,22 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 8
 
+      # SETUP MSYS2 for Windows jobs
       - name: Setup MSYS2
-        if: matrix.config.msys_sys != ''
+        if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.config.msys_sys }}
+          update: true
           install: >-
             mingw-w64-${{ matrix.config.arch }}-gcc
             mingw-w64-${{ matrix.config.arch }}-cmake
             mingw-w64-${{ matrix.config.arch }}-make
-            mingw-w64-${{ matrix.config.arch }}-pkg-config
             mingw-w64-${{ matrix.config.arch }}-tools-git
 
-      - name: Install dependencies (Linux/macOS)
-        if: matrix.config.msys_sys == '' && runner.os != 'Windows'
+      - name: dependency
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
@@ -89,12 +89,12 @@ jobs:
             brew install portaudio hamlib gpsd hidapi
           fi
 
-      - name: create build environment
+      - name: create build directory
         run: cmake -E make_directory ${{github.workspace}}/build
 
       - name: configure
-        # If msys_sys is set, use msys2 shell, otherwise use bash
-        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
+        # Use msys2 shell on Windows to ensure correct PATH and environment
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
           cmake $GITHUB_WORKSPACE \
@@ -106,24 +106,26 @@ jobs:
             ${{ github.event.inputs.cmake_flags }}
 
       - name: build
-        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
-          cmake --build . --config ${{ matrix.config.build_type }}
+          cmake --build . --config ${{ matrix.config.build_type }} \
+            ${{ github.event.inputs.cmake_flags }}
 
       - name: test
         continue-on-error: true
-        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
           ctest -C ${{ matrix.config.build_type }} \
-            --parallel 2 --output-on-failure
+            --parallel 2 --output-on-failure \
+            ${{ github.event.inputs.cmake_flags }}
 
       - name: package
-        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
-          if [[ "$OSTYPE" == "darwin"* ]] || [[ "$MSYSTEM" != "" ]]; then
+          if [ "$RUNNER_OS" == "Windows" ] || [ "$RUNNER_OS" == "macOS" ]; then
             cmake --build . --target package
           fi
 
@@ -134,6 +136,8 @@ jobs:
           path: |
             ${{github.workspace}}/build/direwolf-*.zip
             ${{github.workspace}}/build/direwolf.conf
-            ${{github.workspace}}/build/src/*.exe
-            ${{github.workspace}}/build/src/direwolf
+            ${{github.workspace}}/build/src/*
             ${{github.workspace}}/build/CMakeCache.txt
+            !${{github.workspace}}/build/src/cmake_install.cmake
+            !${{github.workspace}}/build/src/CMakeFiles
+            !${{github.workspace}}/build/src/Makefile
