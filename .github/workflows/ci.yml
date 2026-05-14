@@ -1,7 +1,6 @@
 name: 'build direwolf'
 
 on:
-  # permit to manually trigger the CI
   workflow_dispatch:
     inputs:
       cmake_flags:
@@ -25,31 +24,27 @@ jobs:
           - {
               name: 'Windows Latest MinGW 64bit',
               os: windows-latest,
-              cc: 'x86_64-w64-mingw32-gcc',
-              cxx: 'x86_64-w64-mingw32-g++',
-              ar: 'x86_64-w64-mingw32-ar',
-              windres: 'x86_64-w64-mingw32-windres',
+              cc: 'gcc',
+              cxx: 'g++',
+              ar: 'ar',
+              windres: 'windres',
               arch: 'x86_64',
+              msys_sys: 'MINGW64',
               build_type: 'Release',
               cmake_extra_flags: '-G "MinGW Makefiles"'
             }
-# It seems that the MinGW 32 bit target is no longer supported
-# for the github runner.  There might be a work-around, but for
-# now, disable it so we don't get the annoying failure message.
-# https://www.msys2.org/docs/windows_support/
-# https://github.com/marketplace/actions/install-mingw
-# 
-#          - {
-#              name: 'Windows 2022 MinGW 32bit',
-#              os: windows-2022,
-#              cc: 'i686-w64-mingw32-gcc',
-#              cxx: 'i686-w64-mingw32-g++',
-#              ar: 'i686-w64-mingw32-ar',
-#              windres: 'i686-w64-mingw32-windres',
-#              arch: 'i686',
-#             build_type: 'Release',
-#              cmake_extra_flags: '-G "MinGW Makefiles"'
-#            }
+          - {
+              name: 'Windows 2022 MinGW 32bit',
+              os: windows-2022,
+              cc: 'gcc',
+              cxx: 'g++',
+              ar: 'ar',
+              windres: 'windres',
+              arch: 'i686',
+              msys_sys: 'MINGW32',
+              build_type: 'Release',
+              cmake_extra_flags: '-G "MinGW Makefiles"'
+            }
           - {
               name: 'macOS latest',
               os: macos-latest,
@@ -68,49 +63,48 @@ jobs:
               build_type: 'Debug',
               cmake_extra_flags: ''
             }
-          - {
-              name: 'Ubuntu 22.04',
-              os: ubuntu-22.04,
-              cc: 'gcc',
-              cxx: 'g++',
-              arch: 'x86_64',
-              build_type: 'Release',
-              cmake_extra_flags: ''
-            }
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Updated to v4
         with:
           fetch-depth: 8
+
+      # SETUP MSYS2 for Windows jobs
+      - name: Setup MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.config.msys_sys }}
+          install: >-
+            mingw-w64-${{ matrix.config.arch }}-gcc
+            mingw-w64-${{ matrix.config.arch }}-cmake
+            mingw-w64-${{ matrix.config.arch }}-make
+            mingw-w64-${{ matrix.config.arch }}-tools-git
+
       - name: dependency
         shell: bash
         run: |
-          # this is not perfect but enought for now
           if [ "$RUNNER_OS" == "Linux" ]; then
             sudo apt-get update
             sudo apt-get install libasound2-dev libudev-dev libhamlib-dev gpsd
           elif [ "$RUNNER_OS" == "macOS" ]; then
-            # just to simplify I use homebrew but
-            # we can use macports (latest direwolf is already available as port)
             brew install portaudio hamlib gpsd hidapi
-          elif [ "$RUNNER_OS" == "Windows" ]; then
-            # add the folder to PATH
-            echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH
           fi
+
       - name: create build environment
         run: |
           cmake -E make_directory ${{github.workspace}}/build
+
       - name: configure
         shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
+          # Use MSYS2 paths if on Windows
           if [ "$RUNNER_OS" == "Windows" ]; then
-            export CC=${{ matrix.config.cc }}
-            export CXX=${{ matrix.config.cxx }}
-            export AR=${{ matrix.config.ar }}
-            export WINDRES=${{ matrix.config.windres }}
+            export PATH="/mingw${{ matrix.config.arch == 'x86_64' && '64' || '32' }}/bin:$PATH"
           fi
+          
           cmake $GITHUB_WORKSPACE \
             -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
             -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
@@ -118,18 +112,17 @@ jobs:
             -DCMAKE_CXX_FLAGS="-Werror" -DUNITTEST=1 \
             ${{ matrix.config.cmake_extra_flags }} \
             ${{ github.event.inputs.cmake_flags }}
+
       - name: build
         shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            export CC=${{ matrix.config.cc }}
-            export CXX=${{ matrix.config.cxx }}
-            export AR=${{ matrix.config.ar }}
-            export WINDRES=${{ matrix.config.windres }}
+             export PATH="/mingw${{ matrix.config.arch == 'x86_64' && '64' || '32' }}/bin:$PATH"
           fi
           cmake --build . --config ${{ matrix.config.build_type }} \
             ${{ github.event.inputs.cmake_flags }}
+
       - name: test
         continue-on-error: true
         shell: bash
@@ -138,13 +131,16 @@ jobs:
           ctest -C ${{ matrix.config.build_type }} \
             --parallel 2 --output-on-failure \
             ${{ github.event.inputs.cmake_flags }}
+
       - name: package
         shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
           if [ "$RUNNER_OS" == "Windows" ] ||  [ "$RUNNER_OS" == "macOS" ]; then
-            make package
+            # Using cmake --build . --target package is more portable than 'make'
+            cmake --build . --target package
           fi
+
       - name: archive binary
         uses: actions/upload-artifact@v4
         with:
