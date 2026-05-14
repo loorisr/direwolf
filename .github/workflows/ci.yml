@@ -66,9 +66,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      # SETUP MSYS2 for Windows jobs
       - name: Setup MSYS2
-        if: runner.os == 'Windows'
+        if: matrix.config.msys_sys != ''
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.config.msys_sys }}
@@ -80,7 +79,7 @@ jobs:
             mingw-w64-${{ matrix.config.arch }}-tools-git
 
       - name: Install dependencies (Linux/macOS)
-        if: runner.os != 'Windows'
+        if: matrix.config.msys_sys == '' && runner.os != 'Windows'
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
@@ -94,8 +93,8 @@ jobs:
         run: cmake -E make_directory ${{github.workspace}}/build
 
       - name: configure
-        # Use MSYS2 shell on Windows to ensure correct PATH priority
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        # If msys_sys is set, use msys2 shell, otherwise use bash
+        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
           cmake $GITHUB_WORKSPACE \
@@ -107,24 +106,24 @@ jobs:
             ${{ github.event.inputs.cmake_flags }}
 
       - name: build
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
           cmake --build . --config ${{ matrix.config.build_type }}
 
       - name: test
         continue-on-error: true
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
           ctest -C ${{ matrix.config.build_type }} \
             --parallel 2 --output-on-failure
 
       - name: package
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        shell: ${{ matrix.config.msys_sys != '' && 'msys2 {0}' || 'bash' }}
         working-directory: ${{github.workspace}}/build
         run: |
-          if [ "$RUNNER_OS" != "Linux" ]; then
+          if [[ "$OSTYPE" == "darwin"* ]] || [[ "$MSYSTEM" != "" ]]; then
             cmake --build . --target package
           fi
 
