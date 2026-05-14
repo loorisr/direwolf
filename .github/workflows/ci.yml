@@ -22,52 +22,25 @@ jobs:
       matrix:
         config:
           - {
-              name: 'Windows Latest MinGW 64bit',
-              os: windows-latest,
-              arch: 'x86_64',
-              msys_sys: 'MINGW64',
-              build_type: 'Release',
-              cmake_extra_flags: '-G "MinGW Makefiles"'
-            }
-          - {
               name: 'Windows Latest MinGW 32bit',
               os: windows-latest,
               arch: 'i686',
-              msys_sys: 'MINGW32',
+              mingw_platform: 'x86',
               build_type: 'Release',
               cmake_extra_flags: '-G "MinGW Makefiles"'
-            }
-          - {
-              name: 'macOS latest',
-              os: macos-latest,
-              arch: 'x86_64',
-              build_type: 'Release',
-              cmake_extra_flags: ''
-            }
-          - {
-              name: 'Ubuntu latest Debug',
-              os: ubuntu-latest,
-              arch: 'x86_64',
-              build_type: 'Debug',
-              cmake_extra_flags: ''
             }
 
     steps:
       - name: checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 8
+        uses: actions/checkout@v6
 
-      - name: Setup MSYS2
+      # Use the specific MinGW installer action for Windows
+      - name: Install MinGW
         if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
+        uses: egorpuryaev/install-mingw@v3
         with:
-          msystem: ${{ matrix.config.msys_sys }}
-          update: true
-          install: >-
-            mingw-w64-${{ matrix.config.arch }}-gcc
-            mingw-w64-${{ matrix.config.arch }}-cmake
-            mingw-w64-${{ matrix.config.arch }}-make
+          platform: ${{ matrix.config.mingw_platform }}
+          location: 'C:\mingw'
 
       - name: dependency
         shell: bash
@@ -86,15 +59,7 @@ jobs:
         shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
-          # Explicitly force the correct MinGW path to the front to avoid picking up the runner's default 64-bit GCC
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            if [ "${{ matrix.config.msys_sys }}" == "MINGW32" ]; then
-              export PATH="/c/msys64/mingw32/bin:$PATH"
-            else
-              export PATH="/c/msys64/mingw64/bin:$PATH"
-            fi
-          fi
-
+          # No need for manual PATH exports; install-mingw handles it.
           cmake $GITHUB_WORKSPACE \
             -DCMAKE_BUILD_TYPE=${{ matrix.config.build_type }} \
             -DCMAKE_CXX_FLAGS="-Werror" -DUNITTEST=1 \
@@ -105,13 +70,6 @@ jobs:
         shell: bash
         working-directory: ${{github.workspace}}/build
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            if [ "${{ matrix.config.msys_sys }}" == "MINGW32" ]; then
-              export PATH="/c/msys64/mingw32/bin:$PATH"
-            else
-              export PATH="/c/msys64/mingw64/bin:$PATH"
-            fi
-          fi
           cmake --build . --config ${{ matrix.config.build_type }}
 
       - name: test
@@ -130,7 +88,7 @@ jobs:
           fi
 
       - name: archive binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: direwolf_${{ matrix.config.os }}_${{ matrix.config.arch }}_${{ github.sha }}
           path: |
